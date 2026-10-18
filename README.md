@@ -114,6 +114,14 @@ stateDiagram-v2
 
 ## 🏛️ System Architecture
 
+### End-to-End System Diagram
+
+<p align="center">
+  <img src="asset/Architechture.png" alt="Lockstep End-to-End System Architecture" width="100%" />
+</p>
+
+### Repository File Structure
+
 ```text
 Lockstep Operations Management Platform
 ├── backend/

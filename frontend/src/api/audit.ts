@@ -84,7 +84,7 @@ export async function fetchGlobalAuditLogs(
       },
       {
         id: 'aud-004',
-        work_item_id: 'mock-2',
+        work_item_id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
         work_item_title: 'Compliance audit: Customer data retention check',
         action: 'edited',
         actor: {
@@ -100,7 +100,7 @@ export async function fetchGlobalAuditLogs(
       },
       {
         id: 'aud-005',
-        work_item_id: 'mock-2',
+        work_item_id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
         work_item_title: 'Compliance audit: Customer data retention check',
         action: 'created',
         actor: {
