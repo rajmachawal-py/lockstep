@@ -1,5 +1,5 @@
 # ==============================================================================
-# Newtonite Operations Management - Git Ignore
+# Lockstep Operations Management Platform - Git Ignore
 # ==============================================================================
 
 # Python & Backend
@@ -46,6 +46,9 @@ lerna-debug.log*
 *.key
 *.cert
 *.pfx
+*client_secret*.json
+*.credentials.json
+client_secret*.json
 
 # IDE, Editors & OS Files
 .vscode/
@@ -72,4 +75,3 @@ temp/
 
 # Documentation / Internal Notes
 Docs/
-

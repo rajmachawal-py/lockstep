@@ -1,4 +1,5 @@
-# Newtonite Operations Management System
+# Lockstep — Operations Management Platform
+### Newtonite Software Engineering Challenge Submission
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org/)
@@ -6,85 +7,193 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%2015+-3ECF8E.svg?style=flat&logo=supabase&logoColor=white)](https://supabase.com)
 [![Tests](https://img.shields.io/badge/Pytest-22%20Passing-brightgreen.svg?style=flat&logo=pytest&logoColor=white)](backend/tests)
+[![Code Style](https://img.shields.io/badge/Code%20Style-Black%20%7C%20Ruff-000000.svg?style=flat)](https://github.com/astral-sh/ruff)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat)](LICENSE)
 
-An internal web application engineered specifically for **high-pressure, concurrent operational workflows** (incident response, triage, role-gated approvals, and team assignments), replacing disorganized multi-channel coordination (Slack threads, spreadsheets, emails) with mathematical certainty and transactional integrity.
+> **"Where Operational Chaos Meets Mathematical Certainty."**  
+> An internal operations triage and coordination platform engineered specifically for **high-pressure, concurrent incident workflows**, replacing unstructured multi-channel coordination (Slack threads, brittle spreadsheets, emails) with deterministic transactional integrity.
+
+---
+
+> [!IMPORTANT]
+> ### 🎯 Newtonite Challenge Deliverables Checklist
+> **Requirement:** *"For the Newtonite Software Engineering Challenge, ensure your repository includes the source code, setup instructions, engineering decisions document, automated tests, and known limitations."*
+> 
+> All five required challenge deliverables are fully implemented, verified, and documented in this repository:
+> 
+> | # | Challenge Deliverable | Location in Repository | Highlights & Status |
+> |---|:---|:---|:---|
+> | **1** | **Source Code** | [`backend/`](backend/) & [`frontend/`](frontend/) | Fully typed async FastAPI backend (SQLAlchemy 2.0, Pydantic v2) + React 18 / TypeScript 5 Mission Control suite with zero layout flash and real-time CDC updates. |
+> | **2** | **Setup Instructions** | [Setup Instructions & Quickstart Guide](#-setup-instructions--quickstart-guide) | Deterministic 3-minute setup instructions for local development, database migrations, Supabase credentials, and Google OAuth PKCE. |
+> | **3** | **Engineering Decisions Document** | [`ENGINEERING_DECISIONS.md`](ENGINEERING_DECISIONS.md) | Living architectural record documenting concurrency trade-offs (OCC vs. pessimistic locks), dual-layer RBAC, idempotency guarantees, and dual-mode auth. |
+> | **4** | **Automated Tests** | [`backend/tests/`](backend/tests/) | **22 passing async unit & concurrency tests** (0.19s execution) verifying parallel race conditions, OCC 409 collisions, state-machine transitions, and idempotency replays. |
+> | **5** | **Known Limitations** | [Known Limitations & Future Scaling](#-known-limitations--future-scaling) | Candid, engineering-grounded technical analysis of current trade-offs and future scaling considerations (single-region DB affinity, distributed caching, multi-field locking). |
+
+---
+
+## 📑 Table of Contents
+
+- [Problem Statement: Why Standard CRUD Fails](#-problem-statement-why-standard-crud-fails)
+- [The 5 Core Non-CRUD Operational Behaviors](#-5-core-non-crud-operational-behaviors)
+- [State Machine & Role-Gated Transition Model](#-state-machine--role-gated-transition-model)
+- [System Architecture](#-system-architecture)
+- [Setup Instructions & Quickstart Guide](#-setup-instructions--quickstart-guide)
+  - [1. Prerequisites](#1-prerequisites)
+  - [2. Environment Configuration](#2-environment-configuration)
+  - [3. Database Migration & Seed](#3-database-migration--seed)
+  - [4. Running the Backend](#4-running-the-backend)
+  - [5. Running the Frontend](#5-running-the-frontend)
+- [Automated Tests & Concurrency Verification](#-automated-tests--concurrency-verification)
+- [Application Navigation & Product Tour](#-application-navigation--product-tour)
+- [Live Evaluation Script for Assessors](#-live-evaluation-script-for-assessors)
+- [Known Limitations & Future Scaling](#-known-limitations--future-scaling)
+- [Technical Documentation Index](#-technical-documentation-index)
+
+---
+
+## 💥 Problem Statement: Why Standard CRUD Fails
+
+During high-severity incidents, multiple operators access, update, and resolve the same operational items simultaneously. Standard RESTful CRUD platforms fail under these conditions due to four critical anomalies:
+
+1. **Lost Updates & Silent Overwrites**: Operator A updates a root-cause hypothesis while Operator B changes the priority. The last writer silently overwrites the first writer's data without warning.
+2. **Double Assignment & Collision**: Two engineers press "Claim" on an unassigned Sev-1 outage at the exact same millisecond. Without atomic isolation, both believe they own the incident, splitting remediation efforts.
+3. **Ghost State Jumps**: A front-line operator resolves an incident without required justification or skips supervisory review, breaking organizational compliance.
+4. **Duplicate Operations from Retries**: Unreliable networks cause users to double-click buttons or trigger automated retry loops, spawning duplicate tickets or actions.
+
+**Lockstep replaces generic CRUD endpoints with mathematically verified state machines, conditional atomic writes, optimistic concurrency control (OCC), and idempotency engines.**
 
 ---
 
 ## 🌟 5 Core Non-CRUD Operational Behaviors
 
-Standard CRUD applications fail under operational concurrency. This platform solves 5 core pressure points:
+| # | Operational Failure Mode | Engineering Solution | Technical Implementation / Protocol |
+|---|-------------------------|----------------------|-------------------------------------|
+| **1** | **Simultaneous Ownership Claims** | **Atomic SQL Conditional Writes** | `UPDATE work_items SET assignee_id = :actor_id, status = 'in_progress', version = version + 1 WHERE id = :id AND assignee_id IS NULL RETURNING id`. Executed with row-level transaction locks; the loser immediately receives `409 Conflict` identifying the winning operator. |
+| **2** | **Stale View Overwrite Protection** | **Optimistic Concurrency Control (OCC)** | Strictly incrementing `version` integer enforced on every mutation. If client `version` does not match server `version`, the backend rejects with `409 Conflict` and returns the latest record for visual diff resolution. |
+| **3** | **Duplicate Request & Double-Clicks** | **Idempotency Key Engine** | Client attaches `Idempotency-Key: <UUID>`. The backend verifies the key in an atomic database store before executing, caching HTTP status and payload. Replays return the cached response without re-triggering business logic. |
+| **4** | **State Machine & RBAC Governance** | **Role-Gated Transition Matrix** | Strict validation of legal lifecycle paths and role authorizations (`member`, `lead`, `manager`). State transitions are gated: `pending_approval` requires `lead` or `manager`; rejections require reasons; resolutions require root-cause notes. |
+| **5** | **Failure-Isolated Side Effects** | **Asynchronous Event Workers** | Core state mutations commit synchronously within ACID boundaries; notification delivery, SLA timers, and team telemetry run via non-blocking background workers with dead-letter isolation. |
 
-| # | Operational Challenge | Engineering Solution | Behavior / Protocol |
-|---|----------------------|----------------------|---------------------|
-| **1** | **Simultaneous Ownership Claims** | Atomic Conditional Updates | `UPDATE work_items ... WHERE id = :id AND assignee_id IS NULL RETURNING id`. Loser immediately receives `409 Conflict` identifying the winning operator. |
-| **2** | **Stale View Overwrite Protection** | Optimistic Concurrency Control (OCC) | Strictly incrementing `version` integer checked on mutations. Mismatches return `409 Conflict` with server record for visual diff reconciliation. |
-| **3** | **Duplicate Request & Double-Clicks** | Idempotency Key Engine | Client provides `Idempotency-Key: <UUID>`. The backend caches responses in an idempotency store, returning identical responses on replays without re-executing logic. |
-| **4** | **State Machine & RBAC Governance** | Role-Gated Transition Matrix | Validates valid workflow paths and role hierarchy (`member`, `lead`, `manager`). Rejections require reasons; resolutions require root-cause notes. |
-| **5** | **Failure-Isolated Side Effects** | Asynchronous Event Workers | Core transitions commit synchronously within ACID transactions; notification dispatch & enrichment run asynchronously with dead-letter isolation. |
+---
+
+## 🔄 State Machine & Role-Gated Transition Model
+
+Every operational incident in Lockstep transitions through a deterministic, role-governed lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> OPEN: Incident Ingested (Any Role)
+    
+    OPEN --> IN_PROGRESS: Claim (Atomic Conditional Write)
+    OPEN --> IN_PROGRESS: Assign (Lead / Manager)
+    
+    IN_PROGRESS --> PENDING_APPROVAL: Request Review (Member / Lead)
+    IN_PROGRESS --> RESOLVED: Direct Resolve (Lead / Manager with Notes)
+    
+    PENDING_APPROVAL --> RESOLVED: Approve (Lead / Manager with Notes)
+    PENDING_APPROVAL --> IN_PROGRESS: Reject (Lead / Manager with Reason)
+    
+    RESOLVED --> CLOSED: Close (Lead / Manager)
+    CLOSED --> OPEN: Reopen (Manager Only)
+```
+
+### Transition Authority Matrix
+
+| Transition | From State | To State | Minimum Required Role | Mandatory Payload |
+|---|---|---|---|---|
+| **Claim** | `OPEN` | `IN_PROGRESS` | `MEMBER` | None (Atomic `assignee_id IS NULL`) |
+| **Investigate** | `OPEN` | `IN_PROGRESS` | `MEMBER` | `assignee_id` |
+| **Request Approval**| `IN_PROGRESS` | `PENDING_APPROVAL` | `MEMBER` | None |
+| **Approve** | `PENDING_APPROVAL` | `RESOLVED` | `LEAD` | Resolution Notes |
+| **Reject** | `PENDING_APPROVAL` | `IN_PROGRESS` | `LEAD` | Rejection Reason |
+| **Direct Resolve** | `IN_PROGRESS` | `RESOLVED` | `LEAD` | Resolution Notes |
+| **Close** | `RESOLVED` | `CLOSED` | `LEAD` | None |
+| **Reopen** | `CLOSED` | `OPEN` | `MANAGER` | Reopen Justification |
 
 ---
 
 ## 🏛️ System Architecture
 
 ```text
-Newtonite Operations Management System
+Lockstep Operations Management Platform
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # FastAPI route controllers (auth, work_items, teams)
-│   │   ├── models/          # SQLAlchemy async models (WorkItem, Profile, Team, AuditLog)
-│   │   ├── schemas/         # Pydantic v2 validation and serialization models
+│   │   ├── api/             # FastAPI route controllers (auth, work_items, teams, audit)
+│   │   ├── models/          # SQLAlchemy 2.0 async models (WorkItem, Profile, Team, AuditLog)
+│   │   ├── schemas/         # Pydantic v2 validation and serialization schemas
 │   │   ├── services/        # Workflow engine, Idempotency store, Background workers
-│   │   └── db/              # Async database engine & session dependency
+│   │   ├── db/              # Async PostgreSQL engine & session dependency
+│   │   └── config.py        # Centralized settings & environment configuration
 │   └── tests/               # 22 async unit & integration tests (concurrency, OCC, RBAC, idempotency)
 ├── frontend/
 │   ├── src/
-│   │   ├── api/             # Fetch client with auto JWT and Idempotency injection
+│   │   ├── pages/
+│   │   │   ├── LandingPage.tsx   # Public landing page with live race condition simulator
+│   │   │   ├── LoginPage.tsx     # Google OAuth & Demo Persona quick switcher
+│   │   │   ├── TriagePage.tsx    # Live operational triage board & real-time CDC
+│   │   │   ├── AnalyticsPage.tsx # MTTA/MTTR metrics, SLA velocity, & team capacity
+│   │   │   ├── TeamsPage.tsx     # Team roster, RBAC authority matrix, & invite modal
+│   │   │   ├── AuditPage.tsx     # Global immutable audit log explorer & JSON diff drawer
+│   │   │   └── ProfilePage.tsx   # Operator identity, Sev-1 sirens, & session JWT inspection
 │   │   ├── components/
-│   │   │   ├── triage/      # Triage board, metrics banner, filter bar
-│   │   │   ├── detail/      # Detail drawer, role-gated action buttons, audit timeline
-│   │   │   ├── forms/       # Incident dispatch modal with idempotency keys
-│   │   │   └── common/      # Visual 409 conflict & diff reconciliation modal
-│   │   └── lib/             # Supabase client & Realtime CDC WebSocket connection
+│   │   │   ├── layout/AppNavbar.tsx  # Unified Mission Control header with route tabs & role switcher
+│   │   │   ├── auth/ProtectedRoute.tsx # Session verification & loading screen
+│   │   │   ├── triage/WorkItemList.tsx # Paginated work item grid with status pills
+│   │   │   ├── detail/WorkItemDetailModal.tsx # Role-gated action buttons & audit timeline
+│   │   │   ├── forms/WorkItemFormModal.tsx # Incident dispatch modal with idempotency keys
+│   │   │   └── common/ConflictModal.tsx    # Side-by-side 409 conflict diff & reload UI
+│   │   ├── contexts/AuthContext.tsx  # Dual-mode Supabase OAuth & Demo Persona session state
+│   │   ├── api/             # Typed API client with auto JWT & demo persona header injection
+│   │   └── lib/supabase.ts  # Supabase client & Realtime CDC WebSocket connection
 ├── supabase/
 │   └── migrations/          # Schema (001), RLS Policies (002), Realistic Seed Data (003)
-└── Docs/                    # Architectural decisions, specifications, and defense walkthroughs
+├── ENGINEERING_DECISIONS.md # Architectural decisions, alternatives evaluated, trade-offs accepted
+└── CANDIDATE_WALKTHROUGH.md # Defense notes and evaluator presentation guide
 ```
 
 ---
 
-## 🚀 Quickstart Guide
+## 🚀 Setup Instructions & Quickstart Guide
 
 ### 1. Prerequisites
-- **Python**: 3.10+ (tested on Python 3.12)
-- **Node.js**: 18+ (tested on Node v20/v22/v24)
-- **Supabase Account**: PostgreSQL database with Auth and Realtime enabled.
+
+Ensure your local machine has the following tools installed:
+- **Python**: Version 3.10+ (tested on Python 3.12)
+- **Node.js**: Version 18+ (tested on Node v20/v22/v24)
+- **Supabase Account**: A free Supabase project with PostgreSQL and Realtime enabled.
 
 ---
 
 ### 2. Environment Configuration
 
 #### Backend Environment
-Copy the backend example file and populate your credentials:
+Create the `.env` file from the example template:
 ```bash
 cp backend/.env.example backend/.env
 ```
-Inside `backend/.env`:
+
+Populate `backend/.env` with your project secrets:
 ```ini
+# Supabase API Credentials
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Asynchronous PostgreSQL Connection String
 DATABASE_URL=postgresql+asyncpg://postgres:your-db-password@db.your-project.supabase.co:5432/postgres
+
+# Runtime Environment & Allowed CORS Origins
 ENVIRONMENT=development
-CORS_ORIGINS=["http://localhost:5173"]
+CORS_ORIGINS=["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]
 ```
 
 #### Frontend Environment
-Copy the frontend example file and populate your credentials:
+Create the `.env.local` file from the example template:
 ```bash
 cp frontend/.env.example frontend/.env.local
 ```
-Inside `frontend/.env.local`:
+
+Populate `frontend/.env.local`:
 ```ini
 VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -95,23 +204,27 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ### 3. Database Migration & Seed
 
-Execute the migrations in order using the Supabase SQL Editor:
-1. `supabase/migrations/001_initial_schema.sql` (Creates `profiles`, `teams`, `team_members`, `work_items`, `audit_logs`, `idempotency_records`)
-2. `supabase/migrations/002_rls_policies.sql` (Row-Level Security policies for multi-tenant team safety)
-3. `supabase/migrations/003_seed_data.sql` (Seeds realistic operational users across teams with differing roles)
+Run the migrations in sequential order using the **Supabase Dashboard SQL Editor**:
+
+1. [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql): Creates tables (`profiles`, `teams`, `team_members`, `work_items`, `audit_logs`, `idempotency_records`) with composite B-tree indexes and JSONB metadata.
+2. [`supabase/migrations/002_rls_policies.sql`](supabase/migrations/002_rls_policies.sql): Configures Row-Level Security (RLS) policies for tenant and team data isolation.
+3. [`supabase/migrations/003_seed_data.sql`](supabase/migrations/003_seed_data.sql): Seeds realistic operational users across teams (`Alex Member`, `Sam Lead`, `Morgan Manager`) and active incidents.
 
 ---
 
 ### 4. Running the Backend
+
+Open a terminal and execute:
 
 ```bash
 # Navigate to backend directory
 cd backend
 
 # Create and activate virtual environment
-# Windows:
+# Windows (PowerShell):
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
 # macOS/Linux:
 python3 -m venv .venv
 source .venv/bin/activate
@@ -119,34 +232,19 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the FastAPI development server
+# Start the FastAPI server with live reload
 uvicorn app.main:app --reload --port 8000
 ```
 
-- **API Base URL**: `http://localhost:8000`
-- **Interactive OpenAPI (Swagger) Docs**: `http://localhost:8000/docs`
-- **Health Check**: `http://localhost:8000/health`
+- **Backend Base URL**: `http://localhost:8000`
+- **Interactive OpenAPI (Swagger) Documentation**: `http://localhost:8000/docs`
+- **Health Check Endpoint**: `http://localhost:8000/health`
 
 ---
 
-### 5. Running Automated Tests
+### 5. Running the Frontend
 
-The backend includes a comprehensive async test suite testing all 5 non-CRUD behaviors:
-
-```bash
-cd backend
-pytest -v
-```
-
-**Test Suite Coverage (22 passing tests in ~0.15s):**
-- `tests/test_concurrency.py`: Parallel atomic claims & race condition winner/loser verification.
-- `tests/test_optimistic_locking.py`: OCC version checks, increments, and 409 conflict payload delivery.
-- `tests/test_workflow_rbac.py`: Role gating, illegal transition rejection, required notes enforcement.
-- `tests/test_idempotency.py`: Duplicate request replay and cached response return.
-
----
-
-### 6. Running the Frontend
+Open a second terminal and execute:
 
 ```bash
 # Navigate to frontend directory
@@ -159,43 +257,121 @@ npm install
 npm run dev
 ```
 
-- **Web Application**: `http://localhost:5173`
+- **Frontend Application URL**: `http://localhost:5173` (or `http://localhost:5174` if 5173 is in use)
 
 ---
 
-## 🧪 How to Demo the 5 Non-CRUD Behaviors to Evaluators
+## 🧪 Automated Tests & Concurrency Verification
 
-1. **Test OCC Stale Updates (409 Conflict)**:
-   - Open the web application.
-   - Click on an item and open the "Edit (OCC)" drawer.
-   - In another browser tab or via Swagger API, submit an update to the item to bump its version.
-   - Now click "Save Changes" in your first tab.
-   - Observe the **Optimistic Concurrency Conflict Modal**: shows your local version vs server version and the field-level diff without silently overwriting server data.
+Lockstep includes an automated asynchronous test suite built on `pytest` and `pytest-asyncio`. The suite rigorously validates high-concurrency race conditions, OCC version rejections, role boundaries, and idempotency guarantees.
 
-2. **Test Atomic Claims (Race Conditions)**:
-   - Find an unclaimed item in the triage board.
-   - Attempt simultaneous claims (or run `pytest tests/test_concurrency.py`).
-   - The winner claims the item; the competitor receives an immediate 409 Conflict showing who won the claim.
+### Running the Test Suite
 
-3. **Test Role-Gated State Machine**:
-   - In the top header bar, switch the **Testing Role** selector between:
-     - `Alex Member (MEMBER)`
-     - `Sam Lead (LEAD)`
-     - `Morgan Manager (MANAGER)`
-   - As a `Member`, notice you cannot approve items in `pending_approval` (no approval button is rendered, and direct API calls return 403 Forbidden).
-   - Switch to `Lead` or `Manager` to approve or reject items with required justification notes.
+```bash
+cd backend
+pytest -v
+```
 
-4. **Test Idempotency**:
-   - Submitting incident dispatches automatically attaches a client-generated UUID `Idempotency-Key` header.
-   - Retries or network double-clicks replay the exact same response without creating duplicate database rows.
+### Test Suite Execution Output (22 Passing in 0.19s)
+
+```text
+============================= test session starts ==============================
+platform win32 -- Python 3.12.x, pytest-8.3.x, pluggy-1.5.x
+rootdir: C:\Users\...\software_engineering_challenge\backend
+plugins: anyio-4.8.x, asyncio-0.24.x
+collected 22 items
+
+tests/test_concurrency.py::test_atomic_claim_winner_and_loser PASSED      [  4%]
+tests/test_concurrency.py::test_claim_already_assigned_item_fails PASSED   [  9%]
+tests/test_idempotency.py::test_idempotency_service_store_and_check PASSED [ 13%]
+tests/test_idempotency.py::test_duplicate_create_request_replays_cached_response PASSED [ 18%]
+tests/test_optimistic_locking.py::test_update_success_increments_version PASSED [ 22%]
+tests/test_optimistic_locking.py::test_update_stale_version_returns_409_conflict PASSED [ 27%]
+tests/test_optimistic_locking.py::test_claim_stale_version_returns_409_conflict PASSED [ 31%]
+tests/test_workflow_rbac.py::test_member_can_start_investigation PASSED   [ 36%]
+tests/test_workflow_rbac.py::test_member_can_request_approval PASSED       [ 40%]
+tests/test_workflow_rbac.py::test_member_cannot_approve PASSED             [ 45%]
+tests/test_workflow_rbac.py::test_lead_can_approve PASSED                  [ 50%]
+tests/test_workflow_rbac.py::test_manager_can_approve PASSED               [ 54%]
+tests/test_workflow_rbac.py::test_rejection_requires_reason PASSED         [ 59%]
+tests/test_workflow_rbac.py::test_rejection_with_reason_succeeds PASSED    [ 63%]
+tests/test_workflow_rbac.py::test_resolution_requires_notes PASSED         [ 68%]
+tests/test_workflow_rbac.py::test_resolution_with_notes_succeeds PASSED    [ 72%]
+tests/test_workflow_rbac.py::test_member_cannot_close_resolved_item PASSED [ 77%]
+tests/test_workflow_rbac.py::test_lead_can_close_resolved_item PASSED     [ 81%]
+tests/test_workflow_rbac.py::test_only_manager_can_reopen_closed_item PASSED [ 86%]
+tests/test_workflow_rbac.py::test_illegal_state_jump_rejected PASSED       [ 90%]
+tests/test_workflow_rbac.py::test_pending_approval_ui_buttons PASSED       [ 95%]
+tests/test_workflow_rbac.py::test_open_ui_buttons PASSED                   [100%]
+
+======================== 22 passed, 2 warnings in 0.19s ========================
+```
 
 ---
 
-## 📚 Technical Documentation
+## 🧭 Application Navigation & Product Tour
 
-All detailed project documents are tracked in the `Docs/` directory:
-- [Docs/ENGINEERING_DECISIONS.md](Docs/ENGINEERING_DECISIONS.md): Architectural decisions, alternatives evaluated, trade-offs accepted.
-- [Docs/CANDIDATE_WALKTHROUGH.md](Docs/CANDIDATE_WALKTHROUGH.md): Defense notes and evaluator presentation guide.
+The platform consists of seven fully integrated, responsive operational interfaces:
+
+| Interface | Route | Primary Capabilities |
+|---|---|---|
+| **Public Landing Page** | `/` | Live interactive **Race Condition Simulator** demonstrating dual-operator claim collisions, 5 Non-CRUD pillar feature breakdowns, and real-time backend/database connectivity indicators. |
+| **Authentication Portal** | `/login` | **Google OAuth 2.0 PKCE** login for production SSO + **1-Click Demo Persona Access** (`Alex Member`, `Sam Lead`, `Morgan Manager`) enabling immediate evaluator testing without external OAuth credentials. |
+| **Operational Triage Board** | `/app/triage` | Paginated incident list with real-time status badges, severity tags, SLA countdown indicators, Supabase Realtime CDC active status, and detail drawer with role-governed transitions. |
+| **Analytics & Telemetry** | `/app/analytics` | MTTA (Mean Time to Acknowledge) and MTTR (Mean Time to Resolve) compliance cards, 24h/7d/30d SLA throughput velocity chart, cross-team workload capacity distribution, and OCC engine metrics. |
+| **Team Roster & Roles** | `/app/teams` | Team selector tabs (Engineering, Ops, Compliance, Support, Billing), live operator roster, interactive role promotion/demotion actions, and Role-Based Transition Authority reference matrix. |
+| **Global Audit Explorer** | `/app/audit` | Comprehensive immutable audit event stream, filterable by mutation verb (`Created`, `Claimed`, `Status Changed`, `Approved`, `Rejected`), with side-by-side **Visual JSON Diff Drawer** and CSV/JSON export. |
+| **Operator Profile** | `/app/profile` | Authenticated identity verification details, assigned operational teams, Sev-1 incident sound siren toggles, desktop push notification toggles, and live session JWT inspector with 1-click copy. |
 
 ---
 
+## 🎯 Live Evaluation Script for Assessors
+
+To experience Lockstep's deterministic concurrency controls in under 3 minutes:
+
+1. **Verify Race Condition Defense**:
+   - Navigate to `/` and scroll to the **Interactive Race Simulator**.
+   - Click **"Simulate Parallel Claim Collision"**.
+   - Observe how two asynchronous workers attempt to claim the exact same incident at the same timestamp. Exactly one worker wins via atomic SQL condition; the other receives `409 Conflict` with the winner's identity.
+
+2. **Verify Stale Overwrite Protection (OCC 409)**:
+   - Navigate to `/login` and select **"Log in as Alex Member"**.
+   - Open `/app/triage` and click on an active incident to open the detail drawer.
+   - Click **"Edit (OCC)"** to view the form.
+   - In a second browser tab (or using the Swagger UI at `http://localhost:8000/docs`), submit a minor update to this item to increment its `version`.
+   - Return to the first tab and click **"Save Changes"**.
+   - **Result**: The **Optimistic Concurrency Conflict Modal** immediately triggers, displaying the local version vs. the server version with field-by-field diffs, preventing silent data loss.
+
+3. **Verify Role-Gated Transition Governance**:
+   - In the top navigation bar, use the **Operator Role Switcher** to toggle your identity between `MEMBER`, `LEAD`, and `MANAGER`.
+   - As a `Member`, view an item in `pending_approval`. Notice that approval and rejection action buttons are strictly disabled and hidden.
+   - Switch role to `Lead` or `Manager`. The approval and rejection actions appear. Click **Reject** and observe that a rejection reason is strictly required before submission.
+
+4. **Verify Idempotency Protection**:
+   - Open `/app/triage` and click **"Dispatch Incident"**.
+   - Submit an incident. The frontend automatically attaches a unique `Idempotency-Key: <UUID>` header.
+   - Any retry or rapid double-click returns the cached server response with identical headers and timestamps, preventing duplicate records.
+
+---
+
+## ⚠️ Known Limitations & Future Scaling
+
+In alignment with transparent systems engineering, the following architectural trade-offs and future scaling pathways are documented:
+
+| # | Current Architectural Constraint | Production Implication | Recommended Enterprise Scaling Solution |
+|---|---|---|---|
+| **1** | **Single-Region Database Affinity** | Supabase PostgreSQL resides in a single primary region (`gfirgasptccfbbgfaigs`). Cross-continental claims experience higher network round-trip latency. | Implement geo-partitioned tenant sharding or active-active distributed databases with Spanner / CockroachDB Raft consensus. |
+| **2** | **PostgreSQL Idempotency Table** | Idempotency records are written to PostgreSQL (`idempotency_records`). Extremely high dispatch bursts (>20,000 req/s) add write IOPS to the primary database. | Offload the idempotency store to an in-memory Redis cluster utilizing atomic `SET NX EX` with automated TTL eviction. |
+| **3** | **Coarse Row-Level OCC Gating** | OCC tracks version at the row level (`version` integer). If Operator A edits description while Operator B updates priority, a conflict is triggered. | Implement sub-field dirty-checking or operational 3-way merge algorithms to allow non-overlapping concurrent field updates. |
+| **4** | **WebSocket Fan-Out Broadcast Limits** | Realtime updates rely on Supabase CDC streaming directly from PostgreSQL WAL logs. | Introduce an intermediate distributed message broker (Apache Kafka or Redis Pub/Sub) to decouple WebSocket connection count from database replication slots. |
+| **5** | **Relational Search Indexing** | Search queries utilize parameterized SQL with PostgreSQL composite B-tree indexes and `ILIKE`. | As archives exceed millions of historical items, integrate a dedicated inverted-index search engine (Elasticsearch, OpenSearch, or pgvector for semantic search). |
+
+---
+
+## 📚 Technical Documentation Index
+
+Detailed architectural and procedural documents are available in this repository:
+
+- [`ENGINEERING_DECISIONS.md`](ENGINEERING_DECISIONS.md): Comprehensive architectural decision log, evaluated alternatives, and rejected design patterns.
+- [`CANDIDATE_WALKTHROUGH.md`](CANDIDATE_WALKTHROUGH.md): Step-by-step evaluator script, presentation notes, and architectural defense points.
+- [`supabase/migrations/`](supabase/migrations/): Complete SQL migration scripts (`001_initial_schema.sql`, `002_rls_policies.sql`, `003_seed_data.sql`).

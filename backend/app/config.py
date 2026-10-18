@@ -18,7 +18,12 @@ class Settings(BaseSettings):
 
     # App
     ENVIRONMENT: str = "development"
-    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ]
 
     # JWT (Supabase uses HS256 with the JWT secret from project settings)
     JWT_SECRET: str = ""  # Will be set from SUPABASE_ANON_KEY if not provided

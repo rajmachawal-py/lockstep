@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import auth, work_items, teams
+from app.api import auth, work_items, teams, audit
 
 # ── Create FastAPI App ──────────────────────────────────────
 
@@ -28,6 +28,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(work_items.router, prefix="/api/v1")
 app.include_router(teams.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
 
 
 # ── Health Check ────────────────────────────────────────────
