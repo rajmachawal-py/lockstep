@@ -101,3 +101,39 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetailExtende
     };
   }
 }
+
+export async function addTeamMember(
+  teamId: string,
+  payload: { email: string; full_name?: string; role: TeamRole }
+): Promise<TeamMemberItem> {
+  return apiFetch<TeamMemberItem>(`/teams/${teamId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTeamMemberRole(
+  teamId: string,
+  memberId: string,
+  role: TeamRole
+): Promise<{ status: string; member_id: string; new_role: string }> {
+  return apiFetch<{ status: string; member_id: string; new_role: string }>(
+    `/teams/${teamId}/members/${memberId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }
+  );
+}
+
+export async function removeTeamMember(
+  teamId: string,
+  memberId: string
+): Promise<{ status: string; member_id: string }> {
+  return apiFetch<{ status: string; member_id: string }>(
+    `/teams/${teamId}/members/${memberId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}

@@ -11,6 +11,9 @@ import {
   Briefcase,
   ChevronRight,
   UserCheck,
+  UserMinus,
+  Trash2,
+  Plus,
   Award,
   ArrowUp,
   ArrowDown,
@@ -18,7 +21,15 @@ import {
 } from 'lucide-react';
 import { AppNavbar } from '../components/layout/AppNavbar';
 import { useAuth } from '../contexts/AuthContext';
-import { fetchTeamsList, fetchTeamDetail, TeamDetailExtended, TeamMemberItem } from '../api/teams';
+import {
+  fetchTeamsList,
+  fetchTeamDetail,
+  addTeamMember,
+  updateTeamMemberRole,
+  removeTeamMember,
+  TeamDetailExtended,
+  TeamMemberItem,
+} from '../api/teams';
 import { TeamRole } from '../types';
 
 export function TeamsPage() {
@@ -35,10 +46,12 @@ export function TeamsPage() {
   // Invite Modal
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<TeamRole>('member');
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Initial load
+  // Initial load of teams
   useEffect(() => {
     fetchTeamsList().then((res) => {
       setTeams(res);
@@ -48,18 +61,41 @@ export function TeamsPage() {
     });
   }, []);
 
-  // Fetch Team Detail when selected team changes
+  // Fetch Team Detail when selected team changes (Instant Cached + SWR Background Sync)
   useEffect(() => {
     if (!selectedTeamId) return;
-    setLoading(true);
-    fetchTeamDetail(selectedTeamId).then((res) => {
-      setTeamDetail(res);
-      setLoading(false);
-    });
+
+    try {
+      const cached = localStorage.getItem(`lockstep_team_roster_${selectedTeamId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && Array.isArray(parsed.members) && parsed.members.length > 0) {
+          setTeamDetail(parsed);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      } else {
+        setLoading(true);
+      }
+    } catch {
+      setLoading(true);
+    }
+
+    fetchTeamDetail(selectedTeamId)
+      .then((res) => {
+        if (res) {
+          setTeamDetail(res);
+          try {
+            localStorage.setItem(`lockstep_team_roster_${selectedTeamId}`, JSON.stringify(res));
+          } catch {}
+        }
+      })
+      .finally(() => setLoading(false));
   }, [selectedTeamId]);
 
-  // Handle role promotion / demotion in UI
-  const handleRoleChange = (memberId: string, newRole: TeamRole) => {
+  // Handle role promotion / demotion with API persistence
+  const handleRoleChange = async (memberId: string, newRole: TeamRole) => {
     if (!teamDetail) return;
     const updated = {
       ...teamDetail,
@@ -68,34 +104,99 @@ export function TeamsPage() {
       ),
     };
     setTeamDetail(updated);
+    try {
+      localStorage.setItem(`lockstep_team_roster_${selectedTeamId}`, JSON.stringify(updated));
+      await updateTeamMemberRole(selectedTeamId, memberId, newRole);
+    } catch {}
   };
 
-  const handleSendInvite = (e: React.FormEvent) => {
+  // Handle removing a member from team
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (!teamDetail) return;
+    if (!window.confirm(`Are you sure you want to remove ${memberName} from ${teamDetail.name}?`)) {
+      return;
+    }
+    const updated = {
+      ...teamDetail,
+      members: teamDetail.members.filter((m) => m.id !== memberId),
+    };
+    setTeamDetail(updated);
+    try {
+      localStorage.setItem(`lockstep_team_roster_${selectedTeamId}`, JSON.stringify(updated));
+      await removeTeamMember(selectedTeamId, memberId);
+    } catch {}
+  };
+
+  // Handle adding / inviting teammate to group
+  const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail || !teamDetail) return;
 
+    const cleanEmail = inviteEmail.trim().toLowerCase();
+    const cleanName =
+      inviteName.trim() ||
+      cleanEmail
+        .split('@')[0]
+        .replace(/[._]/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const tempId = `tm-${Date.now()}`;
     const newMember: TeamMemberItem = {
-      id: `tm-${Date.now()}`,
+      id: tempId,
       user_id: `usr-${Date.now()}`,
-      full_name: inviteEmail.split('@')[0],
-      email: inviteEmail,
+      full_name: cleanName,
+      email: cleanEmail,
       role: inviteRole,
       joined_at: new Date().toISOString(),
       workload_count: 0,
     };
 
-    setTeamDetail({
+    // 1. Instant optimistic update so UI is 0ms responsive
+    const updated = {
       ...teamDetail,
-      members: [newMember, ...teamDetail.members],
-    });
+      members: [newMember, ...teamDetail.members.filter((m) => m.email.toLowerCase() !== cleanEmail)],
+    };
+    setTeamDetail(updated);
+    try {
+      localStorage.setItem(`lockstep_team_roster_${selectedTeamId}`, JSON.stringify(updated));
+    } catch {}
 
-    setInviteSuccess(`Operator invite dispatched to ${inviteEmail}!`);
-    setTimeout(() => {
-      setInviteSuccess(null);
-      setIsInviteOpen(false);
-      setInviteEmail('');
-      setInviteRole('member');
-    }, 1500);
+    setInviteSuccess(`Teammate ${cleanName} (${cleanEmail}) successfully added to ${teamDetail.name}!`);
+    setIsSubmitting(true);
+
+    // 2. Persist to backend database
+    try {
+      const serverMember = await addTeamMember(selectedTeamId, {
+        email: cleanEmail,
+        full_name: cleanName,
+        role: inviteRole,
+      });
+
+      if (serverMember) {
+        setTeamDetail((prev) => {
+          if (!prev) return prev;
+          const reconciled = {
+            ...prev,
+            members: prev.members.map((m) => (m.id === tempId ? { ...m, ...serverMember } : m)),
+          };
+          try {
+            localStorage.setItem(`lockstep_team_roster_${selectedTeamId}`, JSON.stringify(reconciled));
+          } catch {}
+          return reconciled;
+        });
+      }
+    } catch (err) {
+      // Retain optimistic local state if network times out
+    } finally {
+      setIsSubmitting(false);
+      setTimeout(() => {
+        setInviteSuccess(null);
+        setIsInviteOpen(false);
+        setInviteEmail('');
+        setInviteName('');
+        setInviteRole('member');
+      }, 1500);
+    }
   };
 
   return (
@@ -190,9 +291,20 @@ export function TeamsPage() {
               <Users size={16} />
               <h3 className="card-header-title">Active Team Operators</h3>
             </div>
-            <span className="roster-count-badge">
-              {teamDetail?.members?.length || 0} Operators On-Duty
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span className="roster-count-badge">
+                {teamDetail?.members?.length || 0} Operators On-Duty
+              </span>
+              {!isMember && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => setIsInviteOpen(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <UserPlus size={14} /> Add Team Member
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -312,6 +424,14 @@ export function TeamsPage() {
                                 <ArrowDown size={12} /> Demote to Lead
                               </button>
                             )}
+                            <button
+                              className="btn btn-ghost btn-xs"
+                              onClick={() => handleRemoveMember(member.id, member.full_name)}
+                              title="Remove operator from team"
+                              style={{ color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.25)' }}
+                            >
+                              <UserMinus size={12} /> Remove
+                            </button>
                           </div>
                         )}
                       </td>
@@ -375,14 +495,14 @@ export function TeamsPage() {
         </div>
       </main>
 
-      {/* Invite Operator Modal */}
+      {/* Add / Invite Teammate Modal */}
       {isInviteOpen && (
         <div className="modal-overlay" onClick={() => setIsInviteOpen(false)}>
           <div className="modal-container invite-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title-row">
                 <UserPlus size={18} />
-                <h2>Invite Operator to {teamDetail?.name || 'Team'}</h2>
+                <h2>Add Team Member to {teamDetail?.name || 'Team'}</h2>
               </div>
               <button className="modal-close-btn" onClick={() => setIsInviteOpen(false)}>
                 <X size={16} />
@@ -398,11 +518,22 @@ export function TeamsPage() {
               ) : (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Operator Email Address</label>
+                    <label className="form-label">Teammate Full Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Alex Rivera"
+                      className="form-input"
+                      value={inviteName}
+                      onChange={(e) => setInviteName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Teammate Email Address *</label>
                     <input
                       type="email"
                       required
-                      placeholder="e.g. dev.lead@company.com"
+                      placeholder="e.g. alex.rivera@company.com"
                       className="form-input"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
@@ -410,7 +541,7 @@ export function TeamsPage() {
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Initial RBAC Role Tier</label>
+                    <label className="form-label">Assigned RBAC Role Tier</label>
                     <select
                       className="form-select"
                       value={inviteRole}
@@ -424,7 +555,7 @@ export function TeamsPage() {
 
                   <div className="invite-notice">
                     <ShieldCheck size={14} />
-                    <span>The invited operator will authenticate via Google OAuth and receive instant role credentials.</span>
+                    <span>Teammates added to this group can collaborate on incidents, claim work items, and request or grant operational approvals together.</span>
                   </div>
 
                   <div className="modal-actions">
@@ -432,11 +563,12 @@ export function TeamsPage() {
                       type="button"
                       className="btn btn-ghost"
                       onClick={() => setIsInviteOpen(false)}
+                      disabled={isSubmitting}
                     >
                       Cancel
                     </button>
-                    <button type="submit" className="btn btn-primary">
-                      Dispatch Invite
+                    <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                      {isSubmitting ? 'Adding Teammate...' : 'Add Teammate to Group'}
                     </button>
                   </div>
                 </>
