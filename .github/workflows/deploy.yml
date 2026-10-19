@@ -1,0 +1,22 @@
+name: Deployments
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-status:
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+      url: https://curious-dodol-4f1c8c.netlify.app/
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Register Production Deployment
+        run: |
+          echo "Lockstep Operations Platform Production Deployment"
+          echo "Live Web Application: https://curious-dodol-4f1c8c.netlify.app/"
+          echo "Live Backend API: https://lockstep-d6b5.onrender.com/"
