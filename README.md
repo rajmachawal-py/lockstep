@@ -120,44 +120,6 @@ stateDiagram-v2
   <img src="asset/Architechture.png" alt="Lockstep End-to-End System Architecture" width="100%" />
 </p>
 
-### Repository File Structure
-
-```text
-Lockstep Operations Management Platform
-├── backend/
-│   ├── app/
-│   │   ├── api/             # FastAPI route controllers (auth, work_items, teams, audit)
-│   │   ├── models/          # SQLAlchemy 2.0 async models (WorkItem, Profile, Team, AuditLog)
-│   │   ├── schemas/         # Pydantic v2 validation and serialization schemas
-│   │   ├── services/        # Workflow engine, Idempotency store, Background workers
-│   │   ├── db/              # Async PostgreSQL engine & session dependency
-│   │   └── config.py        # Centralized settings & environment configuration
-│   └── tests/               # 22 async unit & integration tests (concurrency, OCC, RBAC, idempotency)
-├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── LandingPage.tsx   # Public landing page with live race condition simulator
-│   │   │   ├── LoginPage.tsx     # Google OAuth & Demo Persona quick switcher
-│   │   │   ├── TriagePage.tsx    # Live operational triage board & real-time CDC
-│   │   │   ├── AnalyticsPage.tsx # MTTA/MTTR metrics, SLA velocity, & team capacity
-│   │   │   ├── TeamsPage.tsx     # Team roster, RBAC authority matrix, & invite modal
-│   │   │   ├── AuditPage.tsx     # Global immutable audit log explorer & JSON diff drawer
-│   │   │   └── ProfilePage.tsx   # Operator identity, Sev-1 sirens, & session JWT inspection
-│   │   ├── components/
-│   │   │   ├── layout/AppNavbar.tsx  # Unified Mission Control header with route tabs & role switcher
-│   │   │   ├── auth/ProtectedRoute.tsx # Session verification & loading screen
-│   │   │   ├── triage/WorkItemList.tsx # Paginated work item grid with status pills
-│   │   │   ├── detail/WorkItemDetailModal.tsx # Role-gated action buttons & audit timeline
-│   │   │   ├── forms/WorkItemFormModal.tsx # Incident dispatch modal with idempotency keys
-│   │   │   └── common/ConflictModal.tsx    # Side-by-side 409 conflict diff & reload UI
-│   │   ├── contexts/AuthContext.tsx  # Dual-mode Supabase OAuth & Demo Persona session state
-│   │   ├── api/             # Typed API client with auto JWT & demo persona header injection
-│   │   └── lib/supabase.ts  # Supabase client & Realtime CDC WebSocket connection
-├── supabase/
-│   └── migrations/          # Schema (001), RLS Policies (002), Realistic Seed Data (003)
-├── ENGINEERING_DECISIONS.md # Architectural decisions, alternatives evaluated, trade-offs accepted
-└── CANDIDATE_WALKTHROUGH.md # Defense notes and evaluator presentation guide
-```
 
 ---
 
