@@ -149,7 +149,16 @@ We expanded the application into a cohesive **Mission Control Suite**:
 
 ## 8. Intentional Omissions & Future Enhancements
 
-The following architectural decisions remain intentionally deferred for production scaling:
-1. **Full-Text Search Engine (e.g., Elasticsearch)**: PostgreSQL's native `tsvector` / `ILIKE` indexing was chosen instead of introducing external cluster dependencies.
-2. **Complex BPMN Dynamic Workflow Builder**: Hardcoded, well-typed state machine transitions were prioritized over a visual flowchart editor to ensure bulletproof correctness and zero regression risks.
-3. **Multi-Region Active-Active Replication**: Supabase single-region PostgreSQL was chosen; multi-region active-active would require conflict-free replicated data types (CRDTs) or distributed consensus.
+The following architectural capabilities and scaling features are roadmap enhancements planned for future production iterations:
+1. **Real-Time Operator Presence & Live Co-Working Indicators**:
+   - *Roadmap Goal:* Implement live presence channels (leveraging Supabase Realtime Presence WebSockets) so operators can see in real time who is actively viewing, investigating, or drafting notes on a specific incident (e.g., avatar pills: *"Alex Member is currently viewing this incident"*).
+   - *Architectural Benefit:* Providing visual co-working awareness prevents collision attempts before they occur, complementing our deterministic OCC and atomic SQL claim safeguards with proactive human coordination.
+2. **Interactive Team Collaboration & Incident Channels**:
+   - *Roadmap Goal:* Add internal collaboration feeds with operator @mentions, direct file/log attachments, and ephemeral investigation scratchpads linked to work items.
+3. **Full-Text Search Engine (e.g., Elasticsearch / OpenSearch)**:
+   - PostgreSQL's native `tsvector` / `ILIKE` indexing was chosen for the current scope to maintain architectural simplicity without introducing external search cluster dependencies.
+4. **Complex BPMN Dynamic Workflow Builder**:
+   - Hardcoded, well-typed Python state machine transitions were prioritized over a visual drag-and-drop flowchart editor to ensure bulletproof ACID correctness and zero regression risks.
+5. **Multi-Region Active-Active Replication**:
+   - Supabase single-region PostgreSQL was chosen for deterministic serialization; cross-continental active-active scaling would introduce conflict-free replicated data types (CRDTs) or distributed Raft consensus (Spanner/CockroachDB).
+

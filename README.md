@@ -373,6 +373,7 @@ In alignment with transparent systems engineering, the following architectural t
 | **3** | **Coarse Row-Level OCC Gating** | OCC tracks version at the row level (`version` integer). If Operator A edits description while Operator B updates priority, a conflict is triggered. | Implement sub-field dirty-checking or operational 3-way merge algorithms to allow non-overlapping concurrent field updates. |
 | **4** | **WebSocket Fan-Out Broadcast Limits** | Realtime updates rely on Supabase CDC streaming directly from PostgreSQL WAL logs. | Introduce an intermediate distributed message broker (Apache Kafka or Redis Pub/Sub) to decouple WebSocket connection count from database replication slots. |
 | **5** | **Relational Search Indexing** | Search queries utilize parameterized SQL with PostgreSQL composite B-tree indexes and `ILIKE`. | As archives exceed millions of historical items, integrate a dedicated inverted-index search engine (Elasticsearch, OpenSearch, or pgvector for semantic search). |
+| **6** | **Absence of Real-Time Presence Indicators** | Operators cannot see if another teammate is currently viewing or drafting notes on an item before clicking Save or Claim. | Integrate Supabase Realtime Presence channels to render live co-working avatars (e.g., *"Alex is viewing this item"*), visually preventing collision attempts before mutations are submitted. |
 
 ---
 
