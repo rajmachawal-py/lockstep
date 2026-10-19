@@ -30,43 +30,61 @@ export class ApiError extends Error {
   }
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export async function apiFetch<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<T> {
-  const session = (await supabase.auth.getSession()).data.session;
-  const token = session?.access_token || 'dev-token';
+  const timeoutMs = options.timeoutMs ?? (options.method && options.method !== 'GET' ? 12000 : 5000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-    'X-User-Email': currentPersona.email,
-    'X-User-Role': currentPersona.role,
-    'X-User-Name': currentPersona.name,
-    ...(options.headers as Record<string, string>),
-  };
+  try {
+    const session = (await supabase.auth.getSession()).data.session;
+    const token = session?.access_token || 'dev-token';
 
-  const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'X-User-Email': currentPersona.email,
+      'X-User-Role': currentPersona.role,
+      'X-User-Name': currentPersona.name,
+      ...(options.headers as Record<string, string>),
+    };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+    const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
-  if (!response.ok) {
-    let errorData: any = {};
-    try {
-      errorData = await response.json();
-    } catch {
-      errorData = { detail: response.statusText };
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+
+    if (!response.ok) {
+      let errorData: any = {};
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { detail: response.statusText };
+      }
+      const message =
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : errorData.detail?.message || `Request failed with status ${response.status}`;
+
+      throw new ApiError(message, response.status, errorData.detail || errorData);
     }
-    const message =
-      typeof errorData.detail === 'string'
-        ? errorData.detail
-        : errorData.detail?.message || `Request failed with status ${response.status}`;
 
-    throw new ApiError(message, response.status, errorData.detail || errorData);
+    return response.json();
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw new ApiError(`Request timeout after ${timeoutMs}ms`, 408, { detail: 'Request timed out' });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return response.json();
 }

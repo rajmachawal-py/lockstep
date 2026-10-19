@@ -30,6 +30,7 @@ interface WorkItemListProps {
   onTeamChange: (val: string) => void;
   teams: TeamDetail[];
   loading: boolean;
+  isSyncing?: boolean;
 }
 
 export const WorkItemList: React.FC<WorkItemListProps> = ({
@@ -49,6 +50,7 @@ export const WorkItemList: React.FC<WorkItemListProps> = ({
   onTeamChange,
   teams,
   loading,
+  isSyncing = false,
 }) => {
   // Compute triage statistics
   const openCount = items.filter((i) => i.status === 'open').length;
@@ -157,14 +159,20 @@ export const WorkItemList: React.FC<WorkItemListProps> = ({
           )}
         </div>
 
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Showing {items.length} of {total} incidents
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {isSyncing && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#60a5fa', fontWeight: 500 }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#60a5fa', display: 'inline-block' }} />
+              Live sync...
+            </span>
+          )}
+          <span>Showing {items.length} of {total} incidents</span>
         </div>
       </div>
 
       {/* Work Items Table */}
       <div className="table-container">
-        {loading ? (
+        {loading && items.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             Fetching operational backlog...
           </div>

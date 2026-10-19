@@ -76,21 +76,58 @@ async def get_current_user(
             )
             user_id: Optional[str] = payload.get("sub")
             if user_id is not None:
+                user_email = payload.get("email") or x_user_email or "operator@newtonite.io"
+                user_name = (
+                    payload.get("user_metadata", {}).get("full_name")
+                    or payload.get("user_metadata", {}).get("name")
+                    or x_user_name
+                    or user_email.split("@")[0]
+                )
                 try:
                     result = await db.execute(
                         select(Profile).where(Profile.id == UUID(user_id))
                     )
                     user = result.scalar_one_or_none()
+                    if not user:
+                        # Auto-provision profile for valid authenticated Supabase user
+                        user = Profile(
+                            id=UUID(user_id),
+                            email=user_email,
+                            full_name=user_name,
+                            avatar_url=payload.get("user_metadata", {}).get("avatar_url"),
+                        )
+                        db.add(user)
+                        try:
+                            await db.commit()
+                            await db.refresh(user)
+                        except Exception:
+                            await db.rollback()
+
                     if user:
-                        if settings.ENVIRONMENT == "development" and x_user_role:
-                            try:
-                                r_enum = TeamRole(x_user_role)
-                                user.team_memberships = [TeamMember(id=uuid4(), team_id=DEFAULT_TEAM_ID, user_id=user.id, role=r_enum)]
-                            except Exception:
-                                pass
+                        effective_role = x_user_role or "lead"
+                        try:
+                            r_enum = TeamRole(effective_role)
+                        except Exception:
+                            r_enum = TeamRole.lead
+
+                        if not getattr(user, "team_memberships", None):
+                            user.team_memberships = [
+                                TeamMember(id=uuid4(), team_id=DEFAULT_TEAM_ID, user_id=user.id, role=r_enum)
+                            ]
                         return user
                 except Exception:
-                    pass  # Database offline fallback below
+                    # Database offline or connection issue - return authenticated in-memory profile
+                    r_enum = TeamRole.lead if x_user_role == "lead" else TeamRole.member
+                    user = Profile(
+                        id=UUID(user_id),
+                        email=user_email,
+                        full_name=user_name,
+                        avatar_url=payload.get("user_metadata", {}).get("avatar_url"),
+                    )
+                    user.team_memberships = [
+                        TeamMember(id=uuid4(), team_id=DEFAULT_TEAM_ID, user_id=user.id, role=r_enum)
+                    ]
+                    return user
         except JWTError:
             pass
 

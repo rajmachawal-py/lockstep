@@ -11,6 +11,15 @@ import { AuditPage } from './pages/AuditPage';
 import { ProfilePage } from './pages/ProfilePage';
 
 export function App() {
+  React.useEffect(() => {
+    // Proactively pre-warm backend so cold starts complete before user navigates to triage
+    const isLocal =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const healthUrl = isLocal ? 'http://localhost:8000/health' : 'https://lockstep-d6b5.onrender.com/health';
+    fetch(healthUrl, { mode: 'cors' }).catch(() => {});
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>

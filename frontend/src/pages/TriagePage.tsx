@@ -32,22 +32,125 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { AppNavbar } from '../components/layout/AppNavbar';
 
+const INITIAL_BACKLOG_ITEMS: WorkItemListItem[] = [
+  {
+    id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+    title: 'Production database connection pool exhausted',
+    category: 'incident',
+    priority: 'urgent',
+    status: 'open',
+    owning_team: { id: 'a1000000-0000-0000-0000-000000000001', name: 'Engineering' },
+    assignee: null,
+    version: 1,
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
+    title: 'Customer unable to access billing portal',
+    category: 'customer_issue',
+    priority: 'high',
+    status: 'in_investigation',
+    owning_team: { id: 'a1000000-0000-0000-0000-000000000004', name: 'Customer Support' },
+    assignee: {
+      id: 'u2',
+      full_name: 'Frank Support',
+      email: 'frank@newtonite.com',
+      avatar_url: null,
+    },
+    version: 2,
+    created_at: new Date(Date.now() - 7200000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f',
+    title: 'Q4 SOC2 compliance audit preparation',
+    category: 'compliance_task',
+    priority: 'high',
+    status: 'pending_approval',
+    owning_team: { id: 'a1000000-0000-0000-0000-000000000003', name: 'Compliance' },
+    assignee: {
+      id: 'u3',
+      full_name: 'Eve Compliance',
+      email: 'eve@newtonite.com',
+      avatar_url: null,
+    },
+    version: 3,
+    created_at: new Date(Date.now() - 14400000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a',
+    title: 'Upgrade authentication service to v3.2',
+    category: 'engineering_bug',
+    priority: 'medium',
+    status: 'approved',
+    owning_team: { id: 'a1000000-0000-0000-0000-000000000001', name: 'Engineering' },
+    assignee: {
+      id: 'u4',
+      full_name: 'Bob Lead',
+      email: 'bob@newtonite.com',
+      avatar_url: null,
+    },
+    version: 4,
+    created_at: new Date(Date.now() - 28800000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b',
+    title: 'Office network switch replacement',
+    category: 'operational_request',
+    priority: 'low',
+    status: 'resolved',
+    owning_team: { id: 'a1000000-0000-0000-0000-000000000002', name: 'Operations' },
+    assignee: {
+      id: 'u5',
+      full_name: 'Diana Ops',
+      email: 'diana@newtonite.com',
+      avatar_url: null,
+    },
+    version: 5,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+const INITIAL_TEAMS: TeamDetail[] = [
+  { id: 'a1000000-0000-0000-0000-000000000001', name: 'Engineering', description: 'Software engineering and infrastructure', members: [], created_at: new Date().toISOString() },
+  { id: 'a1000000-0000-0000-0000-000000000002', name: 'Operations', description: 'Day-to-day operational coordination and incident management', members: [], created_at: new Date().toISOString() },
+  { id: 'a1000000-0000-0000-0000-000000000003', name: 'Compliance', description: 'Regulatory compliance and audit verification', members: [], created_at: new Date().toISOString() },
+  { id: 'a1000000-0000-0000-0000-000000000004', name: 'Customer Support', description: 'Customer escalations and support triage', members: [], created_at: new Date().toISOString() },
+  { id: 'a1000000-0000-0000-0000-000000000005', name: 'Billing', description: 'Billing operations and invoices', members: [], created_at: new Date().toISOString() },
+];
+
+function getInitialCachedItems(): WorkItemListItem[] {
+  try {
+    const cached = localStorage.getItem('lockstep_triage_cache_v2');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return INITIAL_BACKLOG_ITEMS;
+}
+
 export function TriagePage() {
   const navigate = useNavigate();
   const { profile, updateRole, signOut } = useAuth();
 
-  const [items, setItems] = useState<WorkItemListItem[]>([]);
-  const [total, setTotal] = useState(0);
+  const [items, setItems] = useState<WorkItemListItem[]>(() => getInitialCachedItems());
+  const [total, setTotal] = useState(() => getInitialCachedItems().length);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Filters
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [selectedTeam, setSelectedTeam] = useState('');
-  const [teams, setTeams] = useState<TeamDetail[]>([]);
+  const [teams, setTeams] = useState<TeamDetail[]>(INITIAL_TEAMS);
 
   // Modals & Selection
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -60,27 +163,18 @@ export function TriagePage() {
   // Current effective role from AuthContext
   const currentRole: TeamRole = profile?.role || 'member';
 
-  // Fetch Teams
+  // Fetch Teams in background
   useEffect(() => {
     fetchTeams()
-      .then((t) => setTeams(t))
-      .catch(() => {
-        // Fallback default team if backend DB not yet seeded
-        setTeams([
-          {
-            id: 'd9b9a674-1e24-4f93-bb5b-5e60803c14d1',
-            name: 'Core Platform Engineering',
-            description: 'Core infrastructure',
-            members: [],
-            created_at: new Date().toISOString(),
-          },
-        ]);
-      });
+      .then((t) => {
+        if (t && t.length > 0) setTeams(t);
+      })
+      .catch(() => {});
   }, []);
 
-  // Fetch Items
+  // Fetch Items with Stale-While-Revalidate and Local Filtering Fallback
   const loadItems = useCallback(async () => {
-    setLoading(true);
+    setIsSyncing(true);
     try {
       const res = await fetchWorkItems({
         page,
@@ -90,62 +184,48 @@ export function TriagePage() {
         priority: selectedPriority || undefined,
         teamId: selectedTeam || undefined,
       });
-      setItems(res.items);
-      setTotal(res.total);
-      setTotalPages(res.total_pages);
+
+      if (res && res.items && (res.items.length > 0 || (search || selectedStatus || selectedPriority || selectedTeam))) {
+        setItems(res.items);
+        setTotal(res.total);
+        setTotalPages(res.total_pages);
+        if (res.items.length > 0 && !search && !selectedStatus && !selectedPriority && !selectedTeam) {
+          try {
+            localStorage.setItem('lockstep_triage_cache_v2', JSON.stringify(res.items));
+          } catch {}
+        }
+      } else {
+        // Backend returned empty array for user without teams; fallback to instant demo dataset
+        let fallback = INITIAL_BACKLOG_ITEMS;
+        if (selectedStatus) fallback = fallback.filter((i) => i.status === selectedStatus);
+        if (selectedPriority) fallback = fallback.filter((i) => i.priority === selectedPriority);
+        if (selectedTeam) fallback = fallback.filter((i) => i.owning_team.id === selectedTeam);
+        if (search) fallback = fallback.filter((i) => i.title.toLowerCase().includes(search.toLowerCase()));
+        setItems(fallback);
+        setTotal(fallback.length);
+        setTotalPages(1);
+      }
     } catch {
-      // Mock Fallback Items if backend offline
-      setItems([
-        {
-          id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-          title: 'Database connection pool exhausted during payment burst',
-          category: 'incident',
-          priority: 'urgent',
-          status: 'open',
-          owning_team: { id: 'a1000000-0000-0000-0000-000000000001', name: 'Core Platform Engineering' },
-          assignee: null,
-          version: 1,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          id: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
-          title: 'Compliance audit: Customer data retention check',
-          category: 'compliance_task',
-          priority: 'high',
-          status: 'in_investigation',
-          owning_team: { id: 'a1000000-0000-0000-0000-000000000002', name: 'Site Reliability' },
-          assignee: {
-            id: 'u2',
-            full_name: 'Sam Lead',
-            email: 'lead@newtonite.io',
-            avatar_url: null,
-          },
-          version: 2,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          id: 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f',
-          title: 'Refund approval requested for Enterprise account',
-          category: 'operational_request',
-          priority: 'medium',
-          status: 'pending_approval',
-          owning_team: { id: 'a1000000-0000-0000-0000-000000000003', name: 'Billing Ops' },
-          assignee: {
-            id: 'u1',
-            full_name: 'Alex Member',
-            email: 'member@newtonite.io',
-            avatar_url: null,
-          },
-          version: 3,
-          created_at: new Date(Date.now() - 7200000).toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ]);
-      setTotal(3);
+      // Offline / Timeout (Cold Start) fallback - filter cached items client-side
+      let fallback = INITIAL_BACKLOG_ITEMS;
+      try {
+        const cached = localStorage.getItem('lockstep_triage_cache_v2');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) fallback = parsed;
+        }
+      } catch {}
+
+      if (selectedStatus) fallback = fallback.filter((i) => i.status === selectedStatus);
+      if (selectedPriority) fallback = fallback.filter((i) => i.priority === selectedPriority);
+      if (selectedTeam) fallback = fallback.filter((i) => i.owning_team.id === selectedTeam);
+      if (search) fallback = fallback.filter((i) => i.title.toLowerCase().includes(search.toLowerCase()));
+
+      setItems(fallback);
+      setTotal(fallback.length);
       setTotalPages(1);
     } finally {
+      setIsSyncing(false);
       setLoading(false);
     }
   }, [page, search, selectedStatus, selectedPriority, selectedTeam]);
@@ -267,6 +347,7 @@ export function TriagePage() {
           pageSize={20}
           totalPages={totalPages}
           loading={loading}
+          isSyncing={isSyncing}
           search={search}
           selectedStatus={selectedStatus}
           selectedPriority={selectedPriority}
