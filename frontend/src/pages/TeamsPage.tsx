@@ -14,6 +14,7 @@ import {
   Award,
   ArrowUp,
   ArrowDown,
+  Lock,
 } from 'lucide-react';
 import { AppNavbar } from '../components/layout/AppNavbar';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,6 +25,7 @@ export function TeamsPage() {
   const { profile } = useAuth();
   const currentRole = profile?.role || 'member';
   const isManager = currentRole === 'manager';
+  const isMember = currentRole === 'member';
 
   const [teams, setTeams] = useState<any[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
@@ -100,12 +102,30 @@ export function TeamsPage() {
     <div className="teams-page">
       <AppNavbar
         actionButton={
-          <button
-            className="btn btn-primary"
-            onClick={() => setIsInviteOpen(true)}
-          >
-            <UserPlus size={15} /> <span>Invite Operator</span>
-          </button>
+          !isMember ? (
+            <button
+              className="btn btn-primary"
+              onClick={() => setIsInviteOpen(true)}
+            >
+              <UserPlus size={15} /> <span>Invite Operator</span>
+            </button>
+          ) : (
+            <span
+              style={{
+                fontSize: '0.8rem',
+                color: 'var(--text-muted)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'var(--bg-tertiary)',
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
+              <Lock size={13} /> View-Only Access
+            </span>
+          )
         }
       />
 
@@ -241,44 +261,59 @@ export function TeamsPage() {
 
                       {/* Role Actions */}
                       <td>
-                        <div className="role-actions-group">
-                          {member.role === 'member' && (
-                            <button
-                              className="btn btn-ghost btn-xs btn-promote"
-                              onClick={() => handleRoleChange(member.id, 'lead')}
-                              title="Promote operator to Lead"
-                            >
-                              <ArrowUp size={12} /> Promote to Lead
-                            </button>
-                          )}
-                          {member.role === 'lead' && (
-                            <>
+                        {isMember ? (
+                          <span
+                            style={{
+                              color: 'var(--text-muted)',
+                              fontSize: '0.78rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            <Lock size={12} /> View Only
+                          </span>
+                        ) : (
+                          <div className="role-actions-group">
+                            {member.role === 'member' && (
                               <button
                                 className="btn btn-ghost btn-xs btn-promote"
-                                onClick={() => handleRoleChange(member.id, 'manager')}
-                                title="Promote operator to Manager"
+                                onClick={() => handleRoleChange(member.id, 'lead')}
+                                title="Promote operator to Lead"
                               >
-                                <ArrowUp size={12} /> Make Manager
+                                <ArrowUp size={12} /> Promote to Lead
                               </button>
+                            )}
+                            {member.role === 'lead' && (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-xs btn-promote"
+                                  onClick={() => handleRoleChange(member.id, 'manager')}
+                                  title="Promote operator to Manager"
+                                >
+                                  <ArrowUp size={12} /> Make Manager
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-xs btn-demote"
+                                  onClick={() => handleRoleChange(member.id, 'member')}
+                                  title="Demote operator to Member"
+                                >
+                                  <ArrowDown size={12} /> Demote
+                                </button>
+                              </>
+                            )}
+                            {member.role === 'manager' && (
                               <button
                                 className="btn btn-ghost btn-xs btn-demote"
-                                onClick={() => handleRoleChange(member.id, 'member')}
-                                title="Demote operator to Member"
+                                onClick={() => handleRoleChange(member.id, 'lead')}
+                                title="Demote operator to Lead"
                               >
-                                <ArrowDown size={12} /> Demote
+                                <ArrowDown size={12} /> Demote to Lead
                               </button>
-                            </>
-                          )}
-                          {member.role === 'manager' && (
-                            <button
-                              className="btn btn-ghost btn-xs btn-demote"
-                              onClick={() => handleRoleChange(member.id, 'lead')}
-                              title="Demote operator to Lead"
-                            >
-                              <ArrowDown size={12} /> Demote to Lead
-                            </button>
-                          )}
-                        </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

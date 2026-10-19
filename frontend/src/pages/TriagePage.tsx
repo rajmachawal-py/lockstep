@@ -14,6 +14,7 @@ import {
 import {
   WorkItemListItem,
   WorkItemDetail,
+  WorkItemStatus,
   ConflictErrorData,
   TeamDetail,
   TeamRole,
@@ -191,7 +192,7 @@ export function TriagePage() {
     };
   }, [selectedItemId, loadItems]);
 
-  const handleSelectItem = async (id: string) => {
+  const handleSelectItem = useCallback(async (id: string) => {
     setSelectedItemId(id);
     try {
       const detail = await fetchWorkItem(id);
@@ -200,6 +201,29 @@ export function TriagePage() {
       // Mock detail fallback for demo mode
       const item = items.find((i) => i.id === id);
       if (item) {
+        let allowed: WorkItemStatus[] = [];
+        if (item.status === 'open') {
+          allowed = ['in_investigation'];
+        } else if (item.status === 'in_investigation') {
+          allowed = currentRole === 'lead' || currentRole === 'manager'
+            ? ['pending_approval', 'resolved']
+            : ['pending_approval'];
+        } else if (item.status === 'pending_approval') {
+          allowed = currentRole === 'lead' || currentRole === 'manager'
+            ? ['approved', 'rejected']
+            : [];
+        } else if (item.status === 'approved') {
+          allowed = ['resolved'];
+        } else if (item.status === 'rejected') {
+          allowed = ['in_investigation'];
+        } else if (item.status === 'resolved') {
+          allowed = currentRole === 'lead' || currentRole === 'manager'
+            ? ['closed']
+            : [];
+        } else if (item.status === 'closed') {
+          allowed = currentRole === 'manager' ? ['open'] : [];
+        }
+
         setSelectedItemDetail({
           ...item,
           description:
@@ -211,31 +235,18 @@ export function TriagePage() {
             avatar_url: null,
           },
           resolution_notes: null,
-          allowed_transitions:
-            item.status === 'open'
-              ? ['in_investigation']
-              : item.status === 'in_investigation'
-              ? ['pending_approval', 'resolved']
-              : item.status === 'pending_approval' && (currentRole === 'lead' || currentRole === 'manager')
-              ? ['approved', 'rejected']
-              : [],
+          allowed_transitions: allowed,
         });
       }
     }
-  };
+  }, [items, currentRole]);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
-  const handleRoleChange = (newRole: TeamRole) => {
-    updateRole(newRole);
+  // Re-fetch item detail whenever role changes so buttons immediately update
+  useEffect(() => {
     if (selectedItemId) {
       handleSelectItem(selectedItemId);
     }
-    loadItems();
-  };
+  }, [currentRole, selectedItemId, handleSelectItem]);
 
   return (
     <div>

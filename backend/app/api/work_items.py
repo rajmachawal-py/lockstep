@@ -323,16 +323,20 @@ async def get_work_item(
     item_id: UUID,
     current_user: Profile = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """Get a single work item with full details."""
     try:
         result = await db.execute(select(WorkItem).where(WorkItem.id == item_id))
         item = result.scalar_one_or_none()
         if item:
-            await require_team_membership(current_user.id, item.owning_team_id, db, current_user=current_user)
-            user_role = await get_user_team_role(current_user.id, item.owning_team_id, db)
-            if not user_role and hasattr(current_user, "team_memberships") and current_user.team_memberships:
-                user_role = current_user.team_memberships[0].role.value if hasattr(current_user.team_memberships[0].role, "value") else str(current_user.team_memberships[0].role)
+            user_role = await require_team_membership(
+                current_user.id,
+                item.owning_team_id,
+                db,
+                current_user=current_user,
+                role_override=x_user_role,
+            )
             allowed = get_allowed_transitions(item.status, user_role) if user_role else []
             response = _build_response(item)
             response["allowed_transitions"] = allowed
@@ -348,8 +352,8 @@ async def get_work_item(
     if not found:
         raise HTTPException(status_code=404, detail="Work item not found")
 
-    user_role = "member"
-    if hasattr(current_user, "team_memberships") and current_user.team_memberships:
+    user_role = x_user_role or "member"
+    if not x_user_role and hasattr(current_user, "team_memberships") and current_user.team_memberships:
         user_role = current_user.team_memberships[0].role.value if hasattr(current_user.team_memberships[0].role, "value") else str(current_user.team_memberships[0].role)
 
     allowed = get_allowed_transitions(WorkItemStatus(found["status"]), user_role)
@@ -678,6 +682,7 @@ async def transition_work_item(
     current_user: Profile = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
 ):
     """
     Transition a work item's status through the state machine.
@@ -690,7 +695,13 @@ async def transition_work_item(
         result = await db.execute(select(WorkItem).where(WorkItem.id == item_id))
         item = result.scalar_one_or_none()
         if item:
-            user_role = await require_team_membership(current_user.id, item.owning_team_id, db, current_user=current_user)
+            user_role = await require_team_membership(
+                current_user.id,
+                item.owning_team_id,
+                db,
+                current_user=current_user,
+                role_override=x_user_role,
+            )
             if item.version != payload.version:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -752,8 +763,8 @@ async def transition_work_item(
             },
         )
 
-    user_role = "member"
-    if hasattr(current_user, "team_memberships") and current_user.team_memberships:
+    user_role = x_user_role or "member"
+    if not x_user_role and hasattr(current_user, "team_memberships") and current_user.team_memberships:
         user_role = current_user.team_memberships[0].role.value if hasattr(current_user.team_memberships[0].role, "value") else str(current_user.team_memberships[0].role)
 
     try:

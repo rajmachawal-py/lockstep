@@ -82,6 +82,12 @@ async def get_current_user(
                     )
                     user = result.scalar_one_or_none()
                     if user:
+                        if settings.ENVIRONMENT == "development" and x_user_role:
+                            try:
+                                r_enum = TeamRole(x_user_role)
+                                user.team_memberships = [TeamMember(id=uuid4(), team_id=DEFAULT_TEAM_ID, user_id=user.id, role=r_enum)]
+                            except Exception:
+                                pass
                         return user
                 except Exception:
                     pass  # Database offline fallback below
@@ -132,25 +138,29 @@ async def require_team_membership(
     db: AsyncSession,
     required_roles: Optional[list] = None,
     current_user: Optional[Profile] = None,
+    role_override: Optional[str] = None,
 ) -> str:
     """
     Verify user is a member of the team. Optionally enforce minimum role.
     Raises 403 if unauthorized.
     Returns the user's role in the team.
     """
-    # 1. Query database first if active session
-    role = await get_user_team_role(user_id, team_id, db)
+    if settings.ENVIRONMENT == "development" and role_override:
+        role = role_override
+    else:
+        # 1. Query database first if active session
+        role = await get_user_team_role(user_id, team_id, db)
 
-    # 2. Check in-memory memberships if attached to current_user (fallback)
-    if role is None and current_user and hasattr(current_user, "team_memberships"):
-        for m in current_user.team_memberships:
-            if m.team_id == team_id or team_id == DEFAULT_TEAM_ID:
-                role = m.role.value if hasattr(m.role, "value") else str(m.role)
-                break
+        # 2. Check in-memory memberships if attached to current_user (fallback)
+        if role is None and current_user and hasattr(current_user, "team_memberships"):
+            for m in current_user.team_memberships:
+                if m.team_id == team_id or team_id == DEFAULT_TEAM_ID:
+                    role = m.role.value if hasattr(m.role, "value") else str(m.role)
+                    break
 
-    # 3. Fallback for default team in development mode
-    if role is None and settings.ENVIRONMENT == "development":
-        role = "member"
+        # 3. Fallback for default team in development mode
+        if role is None and settings.ENVIRONMENT == "development":
+            role = "member"
 
     if role is None:
         raise HTTPException(

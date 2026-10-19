@@ -29,8 +29,8 @@ TRANSITION_MATRIX: dict[WorkItemStatus, dict[WorkItemStatus, list[str] | None]] 
         WorkItemStatus.in_investigation: None,  # Any member can start investigating
     },
     WorkItemStatus.in_investigation: {
-        WorkItemStatus.pending_approval: None,      # Any member can request approval
-        WorkItemStatus.resolved: None,              # Direct resolve (simple items)
+        WorkItemStatus.pending_approval: None,                  # Any member can request approval
+        WorkItemStatus.resolved: ["lead", "manager"],           # Only leads/managers can directly resolve
     },
     WorkItemStatus.pending_approval: {
         WorkItemStatus.approved: ["lead", "manager"],    # Only leads/managers approve
