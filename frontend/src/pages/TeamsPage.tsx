@@ -498,7 +498,7 @@ export function TeamsPage() {
       {/* Add / Invite Teammate Modal */}
       {isInviteOpen && (
         <div className="modal-overlay" onClick={() => setIsInviteOpen(false)}>
-          <div className="modal-container invite-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content invite-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title-row">
                 <UserPlus size={18} />
@@ -561,7 +561,7 @@ export function TeamsPage() {
                   <div className="modal-actions">
                     <button
                       type="button"
-                      className="btn btn-ghost"
+                      className="btn btn-outline"
                       onClick={() => setIsInviteOpen(false)}
                       disabled={isSubmitting}
                     >
